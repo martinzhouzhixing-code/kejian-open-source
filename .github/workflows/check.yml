@@ -27,6 +27,6 @@ jobs:
         with:
           packages: platform-tools
           log-accepted-android-sdk-licenses: false
-      - run: sdkmanager 'platforms;android-37'
+      - run: sdkmanager 'platforms;android-37.0'
       - run: chmod +x gradlew && ./gradlew assemblePublicDebug testPublicDebugUnitTest lintPublicDebug
         working-directory: android
