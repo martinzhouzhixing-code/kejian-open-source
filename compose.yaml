@@ -1,0 +1,11 @@
+services:
+  api:
+    build: ./server
+    env_file: ./server/.env
+    ports:
+      - "127.0.0.1:8401:8401"
+    volumes:
+      - kejian_data:/data
+    restart: unless-stopped
+volumes:
+  kejian_data:
