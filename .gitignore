@@ -1,0 +1,15 @@
+.env
+*.key
+*.keystore
+*.jks
+*.db
+*.db-*
+__pycache__/
+.pytest_cache/
+.gradle/
+build/
+local.properties
+data/
+*.apk
+*.log
+*.zip
