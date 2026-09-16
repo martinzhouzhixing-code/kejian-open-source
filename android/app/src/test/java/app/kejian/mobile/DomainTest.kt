@@ -1,0 +1,30 @@
+package app.kejian.mobile
+
+import org.junit.Assert.*
+import org.junit.Test
+import java.time.*
+
+class DomainTest {
+    private val term=LocalDate.of(2026,8,31)
+    @Test fun snapUsesNearestHalfHourAndForwardTie(){assertEquals(480,snapStart(494.9f,95));assertEquals(510,snapStart(495f,95));assertEquals(510,snapStart(524.9f,95));assertEquals(540,snapStart(525f,95))}
+    @Test fun snappingClampsAtBothDayEdgesWithoutTruncatingDuration(){assertEquals(0,snapStart(-300f,95));assertEquals(1320,snapStart(1430f,95));assertEquals(0,snapStart(1400f,1440));assertTrue(snapStart(1439f,1)+1<=1440)}
+    @Test fun allDragSlotsPreserveDurationAndNeverCrossMidnight(){for(d in listOf(1,30,45,95,180,1440))for(raw in -50..1500){val s=snapStart(raw.toFloat(),d);assertEquals(0,s%30);assertTrue(s>=0);assertTrue(s+d<=1440)}}
+    @Test fun manualTimeSupportsArbitraryMinutesAndEndOfDay(){assertEquals(490,parseTime("08:10"));assertEquals(1440,parseTime("24:00"));assertEquals(490,parseTime("8：10"));assertNull(parseTime("24:01"));assertNull(parseTime("08:60"));assertNull(parseTime("8:1"));assertEquals("24:00",timeText(1440))}
+    @Test fun invalidCoursesCannotSave(){assertNotNull(Course(name=" ").error());assertNotNull(Course(start=600,end=590).error());assertNotNull(Course(start=1440,end=1441).error());assertNotNull(Course(weeks=emptySet()).error());assertNotNull(Course(address="a".repeat(301)).error());assertNull(Course(start=490,end=585,address="东校区 · 博学楼").error())}
+    @Test fun weeksHandleBeforeTermAndSunday(){assertEquals(0,weekNumber(term.minusDays(1),term));assertEquals(-1,weekNumber(term.minusDays(8),term));assertEquals(1,weekNumber(term.plusDays(6),term));assertEquals(2,weekNumber(term.plusDays(7),term))}
+    @Test fun weekParserSupportsRangesAndSparseWeeks(){assertEquals(setOf(1,3,5,6,7),CourseTable.parseWeeks("1,3，5-7"));assertNull(CourseTable.parseWeeks("0-16"));assertNull(CourseTable.parseWeeks("5-3"));assertNull(CourseTable.parseWeeks("31"));assertNull(CourseTable.parseWeeks("1,,2"))}
+    @Test fun recurrenceHonorsWeeksAndExcludedDates(){val c=Course(day=2,weeks=setOf(1,3),excluded=setOf(term.plusDays(1)));assertEquals(setOf(term.plusDays(15)),c.dates(term));assertFalse(c.occurs(term.plusDays(8),term))}
+    @Test fun onlyThisEditDoesNotMoveOtherWeeksOrLoseAddress(){val c=Course(weeks=setOf(1,2),address="旧地址");val changed=editOccurrence(listOf(c),c,c.copy(start=615,end=700,address="新地址"),term,term.plusDays(1));assertEquals(2,changed.size);assertFalse(changed[0].occurs(term,term));assertTrue(changed[0].occurs(term.plusWeeks(1),term));assertEquals("旧地址",changed[0].address);assertEquals("新地址",changed[1].address);assertEquals(setOf(term.plusDays(1)),changed[1].dates(term));assertNotEquals(c.id,changed[1].id)}
+    @Test fun onlyThisDeletePreservesRemainingRepeats(){val c=Course(weeks=setOf(1,2));val list=editOccurrence(listOf(c),c,null,term,term);assertEquals(setOf(term.plusWeeks(1)),list.single().dates(term))}
+    @Test fun conflictsUseHalfOpenIntervalsAndActualDates(){val a=Course(start=480,end=540,weeks=setOf(1));assertFalse(overlap(a,Course(start=540,end=600),term));assertTrue(overlap(a,Course(start=539,end=600),term));assertFalse(overlap(a,Course(start=480,end=540,weeks=setOf(2)),term));assertFalse(overlap(a,a,term));assertFalse(overlap(a,Course(start=480,end=540,date=term.plusDays(1)),term))}
+    @Test fun excludedOccurrenceDoesNotReportPhantomConflict(){val a=Course(start=480,end=540,excluded=setOf(term),weeks=setOf(1));assertTrue(conflictPairs(listOf(a,Course(start=480,end=540,weeks=setOf(1))),term).isEmpty())}
+    @Test fun upcomingOmitsFinishedClassesAndIncludesOngoing(){val c=Course(start=480,end=570,weeks=setOf(1));val data=AppData(listOf(c),Settings(termStart=term));val now=term.atTime(9,0).atZone(ZoneId.of("Asia/Shanghai"));assertEquals(c,upcoming(data,now).single().course);assertTrue(upcoming(data,now,false).isEmpty());assertTrue(upcoming(data,now.plusMinutes(30)).isEmpty())}
+    @Test fun daylightSavingDoesNotShiftCourseWallClock(){val date=LocalDate.of(2026,3,8);val c=Course(start=540,end=600,date=date);val zone=ZoneId.of("America/New_York");assertEquals(LocalTime.of(9,0),Occurrence(c,date).startAt(zone).toLocalTime());assertEquals(LocalTime.of(10,0),Occurrence(c,date).endAt(zone).toLocalTime())}
+    @Test fun midnightEndIsNextDate(){val c=Course(start=1380,end=1440);assertEquals(term.plusDays(1),Occurrence(c,term).endAt().toLocalDate())}
+    @Test fun csvRoundTripsQuotedAndMultilineAddress(){val c=Course(name="设计,基础",address="东校区,\"艺术楼\"\n二层",room="B201",start=490,end=585,teacher="李老师",weeks=setOf(1,3,5));val result=CourseTable.parse(CourseTable.encode(listOf(c),','));assertTrue(result.errors.toString(),result.errors.isEmpty());assertEquals(c.copy(id=result.courses.single().id),result.courses.single())}
+    @Test fun excelTsvRoundTripsTabsAndChinese(){val c=Course(address="北校区\t教学楼",name="程序设计");val result=CourseTable.parse("\uFEFF"+CourseTable.encode(listOf(c)));assertEquals(c.address,result.courses.single().address);assertEquals(c.name,result.courses.single().name)}
+    @Test fun importSeparatesInvalidRowsWithoutSilentlySavingThem(){val r=CourseTable.parse("课程,星期,开始,结束,课堂地址\n英语,周一,08:10,09:40,东校区\n坏数据,周二,25:00,26:00,北校区");assertEquals(1,r.courses.size);assertEquals(1,r.errors.size);assertTrue(r.errors.single().contains("3"));assertEquals("东校区",r.courses.single().address)}
+    @Test fun malformedQuotesAndMissingHeadersAreReported(){assertTrue(CourseTable.parse("\"unclosed").courses.isEmpty());assertFalse(CourseTable.parse("\"unclosed").errors.isEmpty());assertFalse(CourseTable.parse("课程,星期\n英语,1").errors.isEmpty())}
+    @Test fun importLimitsPreventAccidentalHugeLoads(){assertFalse(CourseTable.parse("a".repeat(1_000_001)).errors.isEmpty());assertFalse(CourseTable.parse((1..201).joinToString("\n"){"课程,1,08:00,09:00"}).errors.isEmpty())}
+    @Test fun spreadsheetExportEscapesFormulaPrefixes(){val c=Course(name="=1+1",address="@SUM(1)");val t=CourseTable.encode(listOf(c));assertTrue(t.contains("'=1+1"));assertTrue(t.contains("'@SUM(1)"))}
+}
